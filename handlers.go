@@ -67,6 +67,8 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, 
 					Rows: resizeMessage.Rows,
 					Cols: resizeMessage.Cols,
 				})
+			} else {
+				session.ptmx.Write(message)
 			}
 		}
 	} else {
@@ -104,7 +106,7 @@ func registerHandlers(command []string, credential string) http.Handler {
 		websocketHandler(w, r, command, false)
 	})
 
-	mux.HandleFunc("/ws-ro", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/ws-ro/", func(w http.ResponseWriter, r *http.Request) {
 		websocketHandler(w, r, command, true)
 	})
 

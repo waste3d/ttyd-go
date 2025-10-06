@@ -7,62 +7,74 @@
     <style>
         body { font-family: sans-serif; }
         #info { padding: 10px; color: #ccc; font-size: 12px; }
-        #info code { background-color: #333; padding: 2px 5px; border-radius: 3px; }
+        #info p { margin: 5px 0; }
+        #info code { background-color: #333; padding: 2px 5px; border-radius: 3px; word-break: break-all; }
     </style>
 </head>
 <body>
 <div id="info">
-    <p>Для того чтобы поделиться этой сессией, просто скопируйте и отправьте текущий URL из адресной строки.</p>
-    <p>Session ID: <code id="session-id"></code></p>
+    <p><b>Share this session:</b></p>
+    <p>Read & Write: <code id="rw-link"></code></p>
+    <p>Read-Only: <code id="ro-link"></code></p>
 </div>
 <div id="terminal"></div>
 
 <script src="node_modules/xterm/lib/xterm.js"></script>
 <script src="node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
 <script>
-    const isReadOnly = window.location.search.includes('readonly=true');
+    const termContainer = document.getElementById('terminal');
+    const rwLinkEl = document.getElementById('rw-link');
+    const roLinkEl = document.getElementById('ro-link');
+
+    const params = new URLSearchParams(window.location.search);
+    const roSessionId = params.get('ro');
+
+    let sessionId;
+    let isReadOnly = false;
+    let wsPath = '/ws/';
+
+    if (roSessionId) {
+        sessionId = roSessionId;
+        isReadOnly = true;
+        wsPath = '/ws-ro/';
+    } else if (window.location.hash) {
+        sessionId = window.location.hash.substring(1);
+    } else {
+        sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+        window.location.hash = sessionId;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    rwLinkEl.textContent = `${baseUrl}#${sessionId}`;
+    roLinkEl.textContent = `${baseUrl}?ro=${sessionId}`;
+
     const term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'monospace',
-        theme: { background: '#1e1e1e', foreground: '#d4d4d4' }
+        theme: { background: '#1e1e1e', foreground: '#d4d4d4' },
         disableStdin: isReadOnly
     });
 
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-    term.open(document.getElementById('terminal'));
+    term.open(termContainer);
 
     function fitTerminal() {
         fitAddon.fit();
         const dims = { type: 'resize', cols: term.cols, rows: term.rows };
-        // Отправляем ресайз только если соединение уже установлено
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(dims));
         }
     }
     window.onresize = fitTerminal;
 
-    // --- НОВАЯ ЛОГИКА РАБОТЫ С СЕССИЯМИ ---
-    let sessionId;
-    // 1. Проверяем, есть ли ID в URL после символа #
-    if (window.location.hash) {
-        // Используем существующий ID
-        sessionId = window.location.hash.substring(1);
-    } else {
-        // Генерируем новый ID и добавляем его в URL
-        sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
-        window.location.hash = sessionId;
-    }
-    document.getElementById('session-id').textContent = sessionId;
-
     const protocol = (location.protocol === 'https-:') ? 'wss://' : 'ws://';
-    const wsUrl = protocol + location.host + '/ws/' + sessionId;
+    const wsUrl = protocol + location.host + wsPath + sessionId;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = function() {
-        console.log("WebSocket connection established for session:", sessionId);
-        fitTerminal(); // Подгоняем размер после установки соединения
+        fitTerminal();
         term.focus();
     };
 
@@ -79,17 +91,13 @@
     };
 
     ws.onclose = function() {
-        console.log("WebSocket connection closed");
         term.write('\r\n\r\n[CONNECTION CLOSED]\r\n');
     };
 
     term.onData(function(data) {
-        ws.send(data);
-        term.onData(function(data) {
-            if (!isReadOnly) {
-                ws.send(data);
-            }
-        })
+        if (!isReadOnly) {
+            ws.send(data);
+        }
     });
 </script>
 </body>
