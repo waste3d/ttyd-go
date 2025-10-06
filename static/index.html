@@ -48,7 +48,21 @@
 
     // Когда мы получаем данные из WebSocket, пишем их в терминал
     ws.onmessage = function(event) {
-        term.write(event.data);
+        // Проверяем, если данные пришли в формате Blob
+        if (event.data instanceof Blob) {
+            // Используем FileReader для асинхронного чтения Blob
+            const reader = new FileReader();
+            reader.onload = function() {
+                // Когда Blob прочитан, его результат (ArrayBuffer)
+                // преобразуем в Uint8Array, который понимает xterm.js
+                term.write(new Uint8Array(reader.result));
+            };
+            // Начинаем чтение Blob как ArrayBuffer
+            reader.readAsArrayBuffer(event.data);
+        } else {
+            // Если данные пришли как текст (на всякий случай), пишем их напрямую
+            term.write(event.data);
+        }
     };
 
     ws.onclose = function() {
