@@ -5,17 +5,19 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
 )
 
 type Session struct {
-	id      string
-	ptmx    *os.File
-	cmd     *exec.Cmd
-	clients map[*websocket.Conn]bool
-	mu      sync.RWMutex
+	id        string
+	CreatedAt time.Time
+	ptmx      *os.File
+	cmd       *exec.Cmd
+	clients   map[*websocket.Conn]bool
+	mu        sync.RWMutex
 }
 
 type SessionManager struct {
@@ -43,9 +45,10 @@ func (sm *SessionManager) getOrCreateSession(id string, command []string) (*Sess
 	}
 
 	session := &Session{
-		id:      id,
-		ptmx:    ptmx,
-		clients: make(map[*websocket.Conn]bool),
+		id:        id,
+		CreatedAt: time.Now(),
+		ptmx:      ptmx,
+		clients:   make(map[*websocket.Conn]bool),
 	}
 	sm.sessions[id] = session
 

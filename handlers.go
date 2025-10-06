@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -16,6 +17,33 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+func sessionsApiHandler(w http.ResponseWriter, r *http.Request) {
+	type SessionInfo struct {
+		ID           string    `json:"id"`
+		ClientsCount int       `json:"clients_count"`
+		CreatedAt    time.Time `json:"created_at"`
+	}
+
+	var sessionsInfo []SessionInfo
+
+	manager.mu.RLock()
+	for id, session := range manager.sessions {
+		info := SessionInfo{
+			ID:           id,
+			ClientsCount: len(session.clients),
+			CreatedAt:    session.CreatedAt,
+		}
+		sessionsInfo = append(sessionsInfo, info)
+	}
+
+	manager.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(sessionsInfo); err != nil {
+		log.Printf("Failed to encode sessions to JSON: %v", err)
+	}
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, isReadOnly bool) {
@@ -103,6 +131,10 @@ func registerHandlers(command []string, credential string) http.Handler {
 
 	mux.HandleFunc("/ws-ro/", func(w http.ResponseWriter, r *http.Request) {
 		websocketHandler(w, r, command, true)
+	})
+
+	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		sessionsApiHandler(w, r)
 	})
 
 	subFS, _ := fs.Sub(staticFiles, "static")
