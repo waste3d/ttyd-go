@@ -4,11 +4,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
+	"github.com/urfave/cli/v2"
 )
 
 var upgrader = websocket.Upgrader{
@@ -19,7 +21,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func handleWebsocket(w http.ResponseWriter, r *http.Request, command []string) {
+func handleWebSocket(w http.ResponseWriter, r *http.Request, command []string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Upgrader error:", err)
@@ -82,4 +84,47 @@ func (w *wsWrapper) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+func main() {
+	app := &cli.App{
+		Name:  "go-ttyd",
+		Usage: "A simple command-line tool to share your terminal over the web",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "port",
+				Value:   "8080",
+				Usage:   "Port to listen on",
+				Aliases: []string{"p"},
+			},
+		},
+		Action: func(c *cli.Context) error {
+			port := c.String("port")
+			command := c.Args().Slice()
+			if c.NArg() == 0 {
+				command = []string{"bash"}
+			}
+			log.Printf("Starting go-ttyd on port %s...", port)
+			log.Printf("Command to execute: %v", command)
+
+			fs := http.FileServer(http.Dir("./static"))
+			http.Handle("/", fs)
+
+			http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+				handleWebSocket(w, r, command)
+			})
+
+			log.Println("Server started. Open http://localhost:" + port + " in your browser.")
+
+			if err := http.ListenAndServe(":"+port, nil); err != nil {
+				log.Fatal("ListenAndServe:", err)
+			}
+			return nil
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
