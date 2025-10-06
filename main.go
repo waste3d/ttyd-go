@@ -135,6 +135,7 @@ func main() {
 			if err != nil {
 				log.Fatal("Failed to create sub filesystem: ", err)
 			}
+			// push
 
 			http.Handle("/", http.FileServer(http.FS(subFS)))
 
