@@ -1,8 +1,10 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +15,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/urfave/cli/v2"
 )
+
+//go:embed all:static
+var staticFiles embed.FS
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -126,8 +131,12 @@ func main() {
 			log.Printf("Starting go-ttyd on port %s...", port)
 			log.Printf("Command to execute: %v", command)
 
-			fs := http.FileServer(http.Dir("./static"))
-			http.Handle("/", fs)
+			subFS, err := fs.Sub(staticFiles, "static")
+			if err != nil {
+				log.Fatal("Failed to create sub filesystem: ", err)
+			}
+
+			http.Handle("/", http.FileServer(http.FS(subFS)))
 
 			http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 				handleWebSocket(w, r, command)
