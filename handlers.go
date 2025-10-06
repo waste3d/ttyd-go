@@ -1,3 +1,4 @@
+// handlers.go
 package main
 
 import (
@@ -14,9 +15,7 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, isReadOnly bool) {
@@ -53,7 +52,6 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, 
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				// Клиент отключился
 				break
 			}
 
@@ -73,13 +71,11 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, 
 		}
 	} else {
 		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
+			if _, _, err := conn.ReadMessage(); err != nil {
 				break
 			}
 		}
 	}
-
 }
 
 func authMiddleware(next http.Handler, credential string) http.Handler {
@@ -99,7 +95,6 @@ func authMiddleware(next http.Handler, credential string) http.Handler {
 }
 
 func registerHandlers(command []string, credential string) http.Handler {
-	// Используем mux как роутер для чистоты
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws/", func(w http.ResponseWriter, r *http.Request) {

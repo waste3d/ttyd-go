@@ -30,7 +30,6 @@ func main() {
 				command = []string{"bash"}
 			}
 
-			// Настраиваем все обработчики HTTP.
 			handler := registerHandlers(command, credential)
 
 			log.Printf("Starting go-ttyd on port %s...", port)
@@ -39,7 +38,6 @@ func main() {
 			}
 			log.Println("Server started. Open http://localhost:" + port + " in your browser.")
 
-			// Запускаем сервер с настроенными обработчиками.
 			if err := http.ListenAndServe(":"+port, handler); err != nil {
 				log.Fatal("ListenAndServe:", err)
 			}
