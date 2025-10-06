@@ -19,8 +19,14 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func websocketHandler(w http.ResponseWriter, r *http.Request, command []string) {
-	sessionID := strings.TrimPrefix(r.URL.Path, "/ws/")
+func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, isReadOnly bool) {
+	var sessionID string
+	if strings.HasPrefix(r.URL.Path, "/ws-ro/") {
+		sessionID = strings.TrimPrefix(r.URL.Path, "/ws-ro/")
+	} else {
+		sessionID = strings.TrimPrefix(r.URL.Path, "/ws/")
+	}
+
 	if sessionID == "" {
 		http.Error(w, "Session ID is required", http.StatusBadRequest)
 		return
@@ -38,31 +44,40 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string) 
 		log.Printf("Failed to upgrade websocket: %v", err)
 		return
 	}
-
 	session.addClient(conn)
 	defer session.removeClient(conn)
 
-	// Эта горутина читает ввод от конкретного клиента и пишет в общий PTY сессии.
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
+	log.Printf("Client connected to session %s (read-only: %v)", sessionID, isReadOnly)
 
-		var resizeMessage struct {
-			Type string `json:"type"`
-			Cols uint16 `json:"cols"`
-			Rows uint16 `json:"rows"`
+	if !isReadOnly {
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				// Клиент отключился
+				break
+			}
+
+			var resizeMessage struct {
+				Type string `json:"type"`
+				Cols uint16 `json:"cols"`
+				Rows uint16 `json:"rows"`
+			}
+			if json.Unmarshal(message, &resizeMessage) == nil && resizeMessage.Type == "resize" {
+				pty.Setsize(session.ptmx, &pty.Winsize{
+					Rows: resizeMessage.Rows,
+					Cols: resizeMessage.Cols,
+				})
+			}
 		}
-		if json.Unmarshal(message, &resizeMessage) == nil && resizeMessage.Type == "resize" {
-			pty.Setsize(session.ptmx, &pty.Winsize{
-				Rows: resizeMessage.Rows,
-				Cols: resizeMessage.Cols,
-			})
-		} else {
-			session.ptmx.Write(message)
+	} else {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
 		}
 	}
+
 }
 
 func authMiddleware(next http.Handler, credential string) http.Handler {
@@ -86,7 +101,11 @@ func registerHandlers(command []string, credential string) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws/", func(w http.ResponseWriter, r *http.Request) {
-		websocketHandler(w, r, command)
+		websocketHandler(w, r, command, false)
+	})
+
+	mux.HandleFunc("/ws-ro", func(w http.ResponseWriter, r *http.Request) {
+		websocketHandler(w, r, command, true)
 	})
 
 	subFS, _ := fs.Sub(staticFiles, "static")

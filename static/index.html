@@ -20,11 +20,13 @@
 <script src="node_modules/xterm/lib/xterm.js"></script>
 <script src="node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
 <script>
+    const isReadOnly = window.location.search.includes('readonly=true');
     const term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'monospace',
         theme: { background: '#1e1e1e', foreground: '#d4d4d4' }
+        disableStdin: isReadOnly
     });
 
     const fitAddon = new FitAddon.FitAddon();
@@ -83,6 +85,11 @@
 
     term.onData(function(data) {
         ws.send(data);
+        term.onData(function(data) {
+            if (!isReadOnly) {
+                ws.send(data);
+            }
+        })
     });
 </script>
 </body>
