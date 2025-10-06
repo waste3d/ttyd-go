@@ -29,6 +29,10 @@
 
     function fitTerminal() {
         fitAddon.fit();
+        // Внутри функции fitTerminal(), после fitAddon.fit();
+        const dims = { cols: term.cols, rows: term.rows };
+// Отправляем специальное сообщение в формате JSON
+        ws.send(JSON.stringify({ type: 'resize', ...dims }));
         // Отправка нового размера в PTY (пока не реализовано на бэкенде, но это задел на будущее)
         // ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }

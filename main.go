@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -63,10 +64,28 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, command []string) {
 				break
 			}
 
-			if _, err := ptmx.Write(message); err != nil {
-				log.Println("Error writing to pty:", err)
-				break
+			var resizeMessage struct {
+				Type string `json:"type"`
+				Cols uint16 `json:"cols"`
+				Rows uint16 `json:"rows"`
 			}
+
+			if json.Unmarshal(message, &resizeMessage) == nil && resizeMessage.Type == "resize" {
+				err := pty.Setsize(ptmx, &pty.Winsize{
+					Rows: resizeMessage.Rows,
+					Cols: resizeMessage.Cols,
+				})
+				if err != nil {
+					log.Println("Error resizing pty:", err)
+				}
+			} else {
+				if _, err := ptmx.Write(message); err != nil {
+					log.Println("Error writing to pty:", err)
+					break
+				}
+
+			}
+
 		}
 	}()
 
