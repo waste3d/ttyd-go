@@ -21,23 +21,35 @@ var upgrader = websocket.Upgrader{
 
 func sessionsApiHandler(w http.ResponseWriter, r *http.Request) {
 	type SessionInfo struct {
-		ID           string    `json:"id"`
-		ClientsCount int       `json:"clients_count"`
-		CreatedAt    time.Time `json:"created_at"`
+		ID                string    `json:"id"`
+		ClientsCountTotal int       `json:"clients_count_total"`
+		ClientsCountRW    int       `json:"clients_count_rw"`
+		ClientsCountRO    int       `json:"clients_count_ro"`
+		CreatedAt         time.Time `json:"created_at"`
 	}
 
 	var sessionsInfo []SessionInfo
 
 	manager.mu.RLock()
 	for id, session := range manager.sessions {
-		info := SessionInfo{
-			ID:           id,
-			ClientsCount: len(session.clients),
-			CreatedAt:    session.CreatedAt,
+		rw := 0
+		ro := 0
+		for _, client := range session.clients {
+			if client.isReadOnly {
+				ro++
+			} else {
+				rw++
+			}
 		}
-		sessionsInfo = append(sessionsInfo, info)
+		info := &SessionInfo{
+			ID:                id,
+			CreatedAt:         session.CreatedAt,
+			ClientsCountTotal: len(session.clients),
+			ClientsCountRW:    rw,
+			ClientsCountRO:    ro,
+		}
+		sessionsInfo = append(sessionsInfo, *info)
 	}
-
 	manager.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -71,7 +83,7 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, 
 		log.Printf("Failed to upgrade websocket: %v", err)
 		return
 	}
-	session.addClient(conn)
+	session.addClient(conn, isReadOnly)
 	defer session.removeClient(conn)
 
 	log.Printf("Client connected to session %s (read-only: %v)", sessionID, isReadOnly)

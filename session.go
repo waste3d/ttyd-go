@@ -11,12 +11,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Client struct {
+	conn       *websocket.Conn
+	isReadOnly bool
+}
+
 type Session struct {
 	id        string
 	CreatedAt time.Time
 	ptmx      *os.File
 	cmd       *exec.Cmd
-	clients   map[*websocket.Conn]bool
+	clients   map[*websocket.Conn]*Client
 	mu        sync.RWMutex
 }
 
@@ -48,7 +53,7 @@ func (sm *SessionManager) getOrCreateSession(id string, command []string) (*Sess
 		id:        id,
 		CreatedAt: time.Now(),
 		ptmx:      ptmx,
-		clients:   make(map[*websocket.Conn]bool),
+		clients:   make(map[*websocket.Conn]*Client),
 	}
 	sm.sessions[id] = session
 
@@ -97,9 +102,12 @@ func (s *Session) broadcast(message []byte) {
 }
 
 // addClient добавляет нового клиента в сессию.
-func (s *Session) addClient(conn *websocket.Conn) {
+func (s *Session) addClient(conn *websocket.Conn, isReadOnly bool) {
 	s.mu.Lock()
-	s.clients[conn] = true
+	s.clients[conn] = &Client{
+		conn:       conn,
+		isReadOnly: isReadOnly,
+	}
 	s.mu.Unlock()
 	log.Printf("Client added to session %s. Total clients: %d", s.id, len(s.clients))
 }
