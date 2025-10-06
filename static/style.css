@@ -1,0 +1,13 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #1e1e1e;
+    overflow: hidden; /* Убираем скроллбар */
+}
+
+#terminal {
+    width: 100vw;
+    height: 100vh;
+    padding: 5px;
+    box-sizing: border-box;
+}

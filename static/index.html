@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+    <title>Go-ttyd</title>
+    <link rel="stylesheet" href="node_modules/xterm/css/xterm.css" />
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="terminal"></div>
+
+<script src="node_modules/xterm/lib/xterm.js"></script>
+<script src="node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+<script>
+    const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'monospace',
+        theme: {
+            background: '#1e1e1e',
+            foreground: '#d4d4d4',
+        }
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    const terminalContainer = document.getElementById('terminal');
+    term.open(terminalContainer);
+
+    function fitTerminal() {
+        fitAddon.fit();
+        // Отправка нового размера в PTY (пока не реализовано на бэкенде, но это задел на будущее)
+        // ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    }
+
+    // Подгоняем размер терминала при загрузке и изменении размера окна
+    window.onresize = fitTerminal;
+    fitTerminal();
+
+    const protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+    const wsUrl = protocol + location.host + '/ws';
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = function() {
+        console.log("WebSocket connection established");
+        term.focus();
+    };
+
+    // Когда мы получаем данные из WebSocket, пишем их в терминал
+    ws.onmessage = function(event) {
+        term.write(event.data);
+    };
+
+    ws.onclose = function() {
+        console.log("WebSocket connection closed");
+        term.write('\r\n\r\n[CONNECTION CLOSED]\r\n');
+    };
+
+    ws.onerror = function(error) {
+        console.error("WebSocket Error: " + error);
+    };
+
+    // Когда пользователь вводит что-то в терминал, отправляем это в WebSocket
+    term.onData(function(data) {
+        ws.send(data);
+    });
+</script>
+</body>
+</html>```
+
