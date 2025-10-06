@@ -4,8 +4,17 @@
     <title>Go-ttyd</title>
     <link rel="stylesheet" href="node_modules/xterm/css/xterm.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <style>
+        body { font-family: sans-serif; }
+        #info { padding: 10px; color: #ccc; font-size: 12px; }
+        #info code { background-color: #333; padding: 2px 5px; border-radius: 3px; }
+    </style>
 </head>
 <body>
+<div id="info">
+    <p>Для того чтобы поделиться этой сессией, просто скопируйте и отправьте текущий URL из адресной строки.</p>
+    <p>Session ID: <code id="session-id"></code></p>
+</div>
 <div id="terminal"></div>
 
 <script src="node_modules/xterm/lib/xterm.js"></script>
@@ -15,56 +24,54 @@
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'monospace',
-        theme: {
-            background: '#1e1e1e',
-            foreground: '#d4d4d4',
-        }
+        theme: { background: '#1e1e1e', foreground: '#d4d4d4' }
     });
 
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-
-    const terminalContainer = document.getElementById('terminal');
-    term.open(terminalContainer);
+    term.open(document.getElementById('terminal'));
 
     function fitTerminal() {
         fitAddon.fit();
-        // Внутри функции fitTerminal(), после fitAddon.fit();
-        const dims = { cols: term.cols, rows: term.rows };
-// Отправляем специальное сообщение в формате JSON
-        ws.send(JSON.stringify({ type: 'resize', ...dims }));
-        // Отправка нового размера в PTY (пока не реализовано на бэкенде, но это задел на будущее)
-        // ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        const dims = { type: 'resize', cols: term.cols, rows: term.rows };
+        // Отправляем ресайз только если соединение уже установлено
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(dims));
+        }
     }
-
-    // Подгоняем размер терминала при загрузке и изменении размера окна
     window.onresize = fitTerminal;
-    fitTerminal();
 
-    const protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
-    const wsUrl = protocol + location.host + '/ws';
+    // --- НОВАЯ ЛОГИКА РАБОТЫ С СЕССИЯМИ ---
+    let sessionId;
+    // 1. Проверяем, есть ли ID в URL после символа #
+    if (window.location.hash) {
+        // Используем существующий ID
+        sessionId = window.location.hash.substring(1);
+    } else {
+        // Генерируем новый ID и добавляем его в URL
+        sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+        window.location.hash = sessionId;
+    }
+    document.getElementById('session-id').textContent = sessionId;
+
+    const protocol = (location.protocol === 'https-:') ? 'wss://' : 'ws://';
+    const wsUrl = protocol + location.host + '/ws/' + sessionId;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = function() {
-        console.log("WebSocket connection established");
+        console.log("WebSocket connection established for session:", sessionId);
+        fitTerminal(); // Подгоняем размер после установки соединения
         term.focus();
     };
 
-    // Когда мы получаем данные из WebSocket, пишем их в терминал
     ws.onmessage = function(event) {
-        // Проверяем, если данные пришли в формате Blob
         if (event.data instanceof Blob) {
-            // Используем FileReader для асинхронного чтения Blob
             const reader = new FileReader();
             reader.onload = function() {
-                // Когда Blob прочитан, его результат (ArrayBuffer)
-                // преобразуем в Uint8Array, который понимает xterm.js
                 term.write(new Uint8Array(reader.result));
             };
-            // Начинаем чтение Blob как ArrayBuffer
             reader.readAsArrayBuffer(event.data);
         } else {
-            // Если данные пришли как текст (на всякий случай), пишем их напрямую
             term.write(event.data);
         }
     };
@@ -74,15 +81,9 @@
         term.write('\r\n\r\n[CONNECTION CLOSED]\r\n');
     };
 
-    ws.onerror = function(error) {
-        console.error("WebSocket Error: " + error);
-    };
-
-    // Когда пользователь вводит что-то в терминал, отправляем это в WebSocket
     term.onData(function(data) {
         ws.send(data);
     });
 </script>
 </body>
-</html>```
-
+</html>
