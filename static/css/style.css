@@ -11,3 +11,18 @@ body {
     padding: 5px;
     box-sizing: border-box;
 }
+
+::-webkit-scrollbar-thumb {
+    background: #ff8800;
+    border-radius: 8px;
+    border: 2px solid #1e1e1e;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #ffab40;
+  }
+  
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #ff8800 #1e1e1e;
+  }
