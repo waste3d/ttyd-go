@@ -1,0 +1,17 @@
+{
+    "name": "ttyd-go",
+    "module": "index.ts",
+    "type": "module",
+    "private": true,
+    "devDependencies": {
+      "@types/bun": "latest"
+    },
+    "peerDependencies": {
+      "typescript": "^5"
+    },
+    "dependencies": {
+      "xterm": "^5.3.0",
+      "xterm-addon-fit": "^0.8.0"
+    }
+  }
+  
