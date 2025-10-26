@@ -1,4 +1,3 @@
-// handlers.go
 package main
 
 import (
@@ -58,6 +57,31 @@ func sessionsApiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func commandsApiHandler(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.TrimPrefix(r.URL.Path, "/api/commands/")
+	if sessionID == "" {
+		http.Error(w, "Session ID is required in the URL path", http.StatusBadRequest)
+		return
+	}
+
+	session, exists := manager.getSession(sessionID)
+	if !exists {
+		log.Printf("API /api/commands/: Session [%s] not found.", sessionID)
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	commandLog := session.getLog()
+	// Added logging for debugging
+	log.Printf("API /api/commands/: Session [%s] found. Returning %d log entries.", sessionID, len(commandLog))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(commandLog); err != nil {
+		log.Printf("Failed to encode command log to JSON for session %s: %v", sessionID, err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, isReadOnly bool) {
 	var sessionID string
 	if strings.HasPrefix(r.URL.Path, "/ws-ro/") {
@@ -106,7 +130,10 @@ func websocketHandler(w http.ResponseWriter, r *http.Request, command []string, 
 					Cols: resizeMessage.Cols,
 				})
 			} else {
+				// Added logging for debugging
+				log.Printf("Session [%s]: Received message of length %d to log: %q", sessionID, len(message), string(message))
 				session.ptmx.Write(message)
+				session.processAndLogInput(message)
 			}
 		}
 	} else {
@@ -147,6 +174,10 @@ func registerHandlers(command []string, credential string) http.Handler {
 
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
 		sessionsApiHandler(w, r)
+	})
+
+	mux.HandleFunc("/api/commands/", func(w http.ResponseWriter, r *http.Request) {
+		commandsApiHandler(w, r)
 	})
 
 	subFS, _ := fs.Sub(staticFiles, "static")

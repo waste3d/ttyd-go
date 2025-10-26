@@ -41,55 +41,92 @@
 <p><a href="/">Перейти к терминалу</a></p>
 
 <script>
-    const tbody = document.getElementById('sessions-table-body');
+    const termContainer = document.getElementById('terminal');
+    const rwLinkEl = document.getElementById('rw-link');
+    const roLinkEl = document.getElementById('ro-link');
 
-    function renderSessions(sessions) {
-        tbody.innerHTML = '';
+    const params = new URLSearchParams(window.location.search);
+    const roSessionId = params.get('ro');
 
-        if (!sessions || sessions.length === 0) {
-            const tr = document.createElement('tr');
-            tr.className = 'no-sessions';
-            tr.innerHTML = `<td colspan="4">Нет активных сессий</td>`;
-            tbody.appendChild(tr);
-            return;
-        }
+    let sessionId;
+    let isReadOnly = false;
+    let wsPath = '/ws/';
 
-        sessions.forEach(session => {
-            const tr = document.createElement('tr');
-
-            const createdAt = new Date(session.created_at).toLocaleString();
-            const baseUrl = window.location.origin;
-
-            // ИЗМЕНЕНИЕ: Формируем строку с детализацией по клиентам
-            const clientsStr = `${session.clients_count_total} (${session.clients_count_rw} RW / ${session.clients_count_ro} RO)`;
-
-            tr.innerHTML = `
-                    <td><div class="session-id" title="${session.id}">${session.id}</div></td>
-                    <td>${clientsStr}</td>
-                    <td>${createdAt}</td>
-                    <td>
-                        <a href="${baseUrl}/#${session.id}" target="_blank">Read/Write</a>
-                        <a href="${baseUrl}/?ro=${session.id}" target="_blank">Read-Only</a>
-                    </td>
-                `;
-            tbody.appendChild(tr);
-        });
+    if (roSessionId) {
+        sessionId = roSessionId;
+        isReadOnly = true;
+        wsPath = '/ws-ro/';
+    } else if (window.location.hash) {
+        sessionId = window.location.hash.substring(1);
+    } else {
+        sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+        window.location.hash = sessionId;
     }
 
-    async function fetchSessions() {
-        try {
-            const response = await fetch('/api/sessions');
-            if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`); }
-            const sessions = await response.json();
-            renderSessions(sessions);
-        } catch (error) {
-            console.error("Could not fetch sessions:", error);
-            tbody.innerHTML = `<tr class="no-sessions"><td colspan="4">Не удалось загрузить данные.</td></tr>`;
+    const baseUrl = window.location.origin + window.location.pathname;
+    rwLinkEl.textContent = `${baseUrl}#${sessionId}`;
+    roLinkEl.textContent = `${baseUrl}?ro=${sessionId}`;
+
+    const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'monospace',
+        theme: { background: '#1e1e1e', foreground: '#d4d4d4' },
+        disableStdin: isReadOnly
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(termContainer);
+
+    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+    const protocol = (location.protocol === 'https-:') ? 'wss://' : 'ws://';
+    const wsUrl = protocol + location.host + wsPath + sessionId;
+    const ws = new WebSocket(wsUrl); // 1. Сначала объявляем и инициализируем ws
+
+    function fitTerminal() {
+        fitAddon.fit();
+        const dims = { type: 'resize', cols: term.cols, rows: term.rows };
+        // Проверка на 'ws' здесь по-прежнему полезна, так как соединение может быть не открыто
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(dims));
         }
     }
 
-    fetchSessions();
-    setInterval(fetchSessions, 2500);
+    window.onresize = fitTerminal; // 2. Теперь безопасно назначать обработчик
+
+    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
+
+    ws.onopen = function() {
+        fitTerminal(); // Вызываем, чтобы подогнать размер при открытии
+        term.focus();
+    };
+
+    ws.onmessage = function(event) {
+        // Код обработки сообщений остается без изменений
+        if (event.data instanceof Blob) {
+            const reader = new FileReader();
+            reader.onload = function() {
+                // В вашем коде было new Uint8Array(reader.result), но для xterm.js лучше просто reader.result, если данные текстовые
+                // Если данные бинарные, то Uint8Array корректен.
+                term.write(new Uint8Array(reader.result));
+            };
+            reader.readAsArrayBuffer(event.data);
+        } else {
+            term.write(event.data);
+        }
+    };
+
+    ws.onclose = function() {
+        term.write('\r\n\r\n[CONNECTION CLOSED]\r\n');
+    };
+
+    term.onData(function(data) {
+        if (!isReadOnly && ws.readyState === WebSocket.OPEN) { // Добавлена проверка состояния
+            ws.send(data);
+        }
+    });
 </script>
 
 </body>

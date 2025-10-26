@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -17,12 +18,14 @@ type Client struct {
 }
 
 type Session struct {
-	id        string
-	CreatedAt time.Time
-	ptmx      *os.File
-	cmd       *exec.Cmd
-	clients   map[*websocket.Conn]*Client
-	mu        sync.RWMutex
+	id          string
+	CreatedAt   time.Time
+	ptmx        *os.File
+	cmd         *exec.Cmd
+	clients     map[*websocket.Conn]*Client
+	CommandLog  []string // Changed to store final command strings
+	inputBuffer []byte   // Buffer to build the current line of input
+	mu          sync.RWMutex
 }
 
 type SessionManager struct {
@@ -32,6 +35,14 @@ type SessionManager struct {
 
 var manager = SessionManager{
 	sessions: make(map[string]*Session),
+}
+
+// getSession safely retrieves a session by its ID.
+func (sm *SessionManager) getSession(id string) (*Session, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	session, exists := sm.sessions[id]
+	return session, exists
 }
 
 func (sm *SessionManager) getOrCreateSession(id string, command []string) (*Session, error) {
@@ -50,10 +61,12 @@ func (sm *SessionManager) getOrCreateSession(id string, command []string) (*Sess
 	}
 
 	session := &Session{
-		id:        id,
-		CreatedAt: time.Now(),
-		ptmx:      ptmx,
-		clients:   make(map[*websocket.Conn]*Client),
+		id:          id,
+		CreatedAt:   time.Now(),
+		ptmx:        ptmx,
+		clients:     make(map[*websocket.Conn]*Client),
+		CommandLog:  make([]string, 0), // Initialize as a string slice
+		inputBuffer: make([]byte, 0),   // Initialize the input buffer
 	}
 	sm.sessions[id] = session
 
@@ -62,9 +75,7 @@ func (sm *SessionManager) getOrCreateSession(id string, command []string) (*Sess
 	return session, nil
 }
 
-// run - главный цикл сессии, читает из pty и транслирует многим (броадкастит).
 func (s *Session) run() {
-	// Очистка при завершении функции
 	defer func() {
 		manager.mu.Lock()
 		delete(manager.sessions, s.id)
@@ -89,7 +100,6 @@ func (s *Session) run() {
 	}
 }
 
-// broadcast отправляет данные из PTY всем клиентам в сессии.
 func (s *Session) broadcast(message []byte) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -101,7 +111,44 @@ func (s *Session) broadcast(message []byte) {
 	}
 }
 
-// addClient добавляет нового клиента в сессию.
+// processAndLogInput intelligently processes terminal input to reconstruct commands.
+func (s *Session) processAndLogInput(data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, charByte := range data {
+		char := rune(charByte)
+		switch char {
+		case '\r': // Carriage return (Enter key)
+			if len(s.inputBuffer) > 0 {
+				command := string(s.inputBuffer)
+				s.CommandLog = append(s.CommandLog, command)
+				log.Printf("Session [%s]: Logged command: \"%s\". Total commands: %d", s.id, command, len(s.CommandLog))
+				s.inputBuffer = make([]byte, 0) // Clear the buffer
+			}
+		case '\u007f', '\b': // Backspace or Delete
+			if len(s.inputBuffer) > 0 {
+				s.inputBuffer = s.inputBuffer[:len(s.inputBuffer)-1]
+			}
+		default:
+			// Append only printable characters, ignore control sequences
+			if unicode.IsPrint(char) {
+				s.inputBuffer = append(s.inputBuffer, byte(char))
+			}
+		}
+	}
+}
+
+// getLog retrieves a copy of the command log.
+func (s *Session) getLog() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// Return a copy to ensure thread safety
+	logCopy := make([]string, len(s.CommandLog))
+	copy(logCopy, s.CommandLog)
+	return logCopy
+}
+
 func (s *Session) addClient(conn *websocket.Conn, isReadOnly bool) {
 	s.mu.Lock()
 	s.clients[conn] = &Client{
@@ -112,7 +159,6 @@ func (s *Session) addClient(conn *websocket.Conn, isReadOnly bool) {
 	log.Printf("Client added to session %s. Total clients: %d", s.id, len(s.clients))
 }
 
-// removeClient удаляет клиента из сессии.
 func (s *Session) removeClient(conn *websocket.Conn) {
 	s.mu.Lock()
 	delete(s.clients, conn)
